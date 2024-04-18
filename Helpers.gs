@@ -212,6 +212,7 @@ function filterResults(events){
   Logger.log(`Applying ${filters.length} filters on ${events.length} events.`);
 
   for (var filter of filters){
+    filter.parameter = filter.parameter.toLowerCase();
     events = events.filter(function(event){
       try{
         if (["dtstart", "dtend"].includes(filter.parameter)){
