@@ -231,7 +231,18 @@ function filterResults(events){
         else{
           let regexString = `${(["equals", "begins with"].includes(filter.comparison)) ? "^" : ""}(${filter.criterias.join("|")})${(filter.comparison == "equals") ? "$" : ""}`;
           let regex = new RegExp(regexString);
-          return (regex.test(event.getFirstPropertyValue(filter.parameter).toString()) ^ (filter.type == "exclude"));
+          let result = regex.test(event.getFirstPropertyValue(filter.parameter).toString()) ^ (filter.type == "exclude");
+          if (!result && event.hasProperty('recurrence-id')){
+            let id = event.getFirstPropertyValue('uid');
+            Logger.log(`Filtering recurrence instance of ${id} at ${event.getFirstPropertyValue('dtstart').toICALString()}`);
+            let indx = events.findIndex((e) => e.getFirstPropertyValue('uid') == id && !e.hasProperty('recurrence-id'));
+            if (!events[indx].hasProperty('exdate')){
+              events[indx].addProperty(new ICAL.Property('exdate'));
+            }
+            let exdates = events[indx].getFirstProperty('exdate').getValues().concat(event.getFirstPropertyValue('recurrence-id'));
+            events[indx].getFirstProperty('exdate').setValues(exdates);
+          }
+          return result;
         } 
       }
       catch(e){return (filter.type == "exclude");}
