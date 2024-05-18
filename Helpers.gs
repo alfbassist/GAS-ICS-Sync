@@ -216,16 +216,22 @@ function filterResults(events){
     events = events.filter(function(event){
       try{
         if (["dtstart", "dtend"].includes(filter.parameter)){
-          let referenceDate = new ICAL.Time.fromJSDate(new Date()).adjust(filter.offset,0,0,0);
-          switch (filter.comparison){
-            case ">":
-              return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) > 0) ^ (filter.type == "exclude"));
-            case "<":
-              return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) < 0) ^ (filter.type == "exclude"));
-            case "=":
-              return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) = 0) ^ (filter.type == "exclude"));
-            case "default":
-              return true;
+          if (event.hasProperty('recurrence-id') || event.hasProperty('rrule') || event.hasProperty('rdate') || event.hasProperty('exdate')){
+            Logger.log(`Filter parameter "${filter.parameter}" currently not supported for recurring events (event id: ${event.getFirstPropertyValue('uid')})`);
+            return true;
+          }
+          else{
+            let referenceDate = new ICAL.Time.fromJSDate(new Date()).adjust(filter.offset,0,0,0);
+            switch (filter.comparison){
+              case ">":
+                return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) > 0) ^ (filter.type == "exclude"));
+              case "<":
+                return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) < 0) ^ (filter.type == "exclude"));
+              case "=":
+                return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) = 0) ^ (filter.type == "exclude"));
+              case "default":
+                return true;
+            }
           }
         }
         else{
