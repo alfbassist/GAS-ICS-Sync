@@ -216,8 +216,13 @@ function filterResults(events){
     events = events.filter(function(event){
       try{
         if (["dtstart", "dtend"].includes(filter.parameter)){
-          if (event.hasProperty('recurrence-id') || event.hasProperty('rrule') || event.hasProperty('rdate') || event.hasProperty('exdate')){
-            Logger.log(`Filter parameter "${filter.parameter}" currently not supported for recurring events (event id: ${event.getFirstPropertyValue('uid')})`);
+          if (event.hasProperty('rrule')) {
+            let rrule = event.getFirstProperty('rrule').getFirstValue();
+            let referenceDate = new ICAL.Time.fromJSDate(new Date()).adjust(filter.offset, 0, 0, 0);
+            let modifiedRule = modifyRRule(rrule, filter, referenceDate);
+
+            event.updatePropertyWithValue('rrule', modifiedRule);
+            
             return true;
           }
           else{
@@ -257,6 +262,26 @@ function filterResults(events){
   
   Logger.log(`${events.length} events left.`);
   return events;
+}
+
+/**
+ * Modifies the RRULE based on the filter criteria.
+ *
+ * @param {string} rrule - The RRULE to modify
+ * @param {Object} filter - The filter to apply
+ * @param {ICAL.Time} referenceDate - The reference date to compare with
+ * @return {string} The modified RRULE
+ */
+function modifyRRule(rrule, filter, referenceDate) {
+  let rule = new ICAL.Recur(rrule);
+  
+  if (filter.comparison === ">" && filter.type === "exclude") {
+    rule.until = referenceDate;
+  } else if (filter.comparison === "<" && filter.type === "include") {
+    rule.until = referenceDate;
+  }
+
+  return rule;
 }
 
 /**
