@@ -217,23 +217,25 @@ function filterResults(events){
       try{
         if (["dtstart", "dtend"].includes(filter.parameter)){
           if (event.hasProperty('rrule')) {
-            let rrule = event.getFirstProperty('rrule').getFirstValue();
             let referenceDate = new ICAL.Time.fromJSDate(new Date()).adjust(filter.offset, 0, 0, 0);
-            let modifiedRule = modifyRRule(rrule, filter, referenceDate);
-
-            event.updatePropertyWithValue('rrule', modifiedRule);
+              if ((filter.comparison === ">" && filter.type === "exclude")||(filter.comparison === "<" && filter.type === "include")) {
+                event = modifyRecurrenceEnd(event, referenceDate);
+              } else if ((filter.comparison === "<" && filter.type === "exclude")||(filter.comparison === ">" && filter.type === "include")) {
+                event = modifyRecurrenceStart(event, referenceDate);
+              }
             
             return true;
           }
           else{
             let referenceDate = new ICAL.Time.fromJSDate(new Date()).adjust(filter.offset,0,0,0);
+            let eventTime = new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter));
             switch (filter.comparison){
               case ">":
-                return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) > 0) ^ (filter.type == "exclude"));
+                return ((eventTime.compare(referenceDate) > 0) ^ (filter.type == "exclude"));
               case "<":
-                return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) < 0) ^ (filter.type == "exclude"));
+                return ((eventTime.compare(referenceDate) < 0) ^ (filter.type == "exclude"));
               case "=":
-                return ((new ICAL.Time.fromString(event.getFirstPropertyValue(filter.parameter).toString(), event.getFirstProperty(filter.parameter)).compare(referenceDate) = 0) ^ (filter.type == "exclude"));
+                return ((eventTime.compare(referenceDate) = 0) ^ (filter.type == "exclude"));
               case "default":
                 return true;
             }
@@ -265,23 +267,88 @@ function filterResults(events){
 }
 
 /**
- * Modifies the RRULE based on the filter criteria.
+ * Modifies the end of the given recurrence series.
  *
- * @param {string} rrule - The RRULE to modify
- * @param {Object} filter - The filter to apply
- * @param {ICAL.Time} referenceDate - The reference date to compare with
- * @return {string} The modified RRULE
+ * @param {ICAL.Component} event - The event to modify
+ * @param {ICAL.Time} referenceDate - The new recurrence end date
+ * @return {ICAL.Component} The modified event
  */
-function modifyRRule(rrule, filter, referenceDate) {
-  let rule = new ICAL.Recur(rrule);
-  
-  if (filter.comparison === ">" && filter.type === "exclude") {
-    rule.until = referenceDate;
-  } else if (filter.comparison === "<" && filter.type === "include") {
-    rule.until = referenceDate;
-  }
+function modifyRecurrenceEnd(event, referenceDate) {
+  let rule = new ICAL.Recur(event.getFirstProperty('rrule').getFirstValue());
+  rule.until = referenceDate;
 
-  return rule;
+  event.updatePropertyWithValue('rrule', rule);
+  return event;
+}
+
+/**
+ * Modifies the start of the given recurrence series.
+ *
+ * @param {ICAL.Component} event - The event to modify
+ * @param {ICAL.Time} referenceDate - The new recurrence start date
+ * @return {ICAL.Component} The modified event
+ */
+function modifyRecurrenceStart(event, referenceDate) {
+  let eventStart = new ICAL.Time.fromString(event.getFirstPropertyValue('dtstart').toString(), event.getFirstProperty('dtstart'));
+  let icalEvent = new ICAL.Event(event);
+  if (eventStart.compare(referenceDate) < 0){
+    var dtstart = event.getFirstPropertyValue('dtstart');
+    var expand = new ICAL.RecurExpansion({component: event, dtstart: dtstart});
+    var next;
+    var newStartDate;
+    var countskipped = 0;
+    while (next = expand.next()) {
+      if (next.compare(referenceDate) < 0) {
+        countskipped ++;
+        continue;
+      }
+
+      newStartDate = next;
+      break;
+    }
+
+    if (newStartDate != null){//At least one instance is in the future
+      var diff = newStartDate.subtractDate(icalEvent.startDate);
+      icalEvent.endDate.addDuration(diff);
+      var newEndDate = icalEvent.endDate;
+      icalEvent.endDate = newEndDate;
+      icalEvent.startDate = newStartDate;
+
+      var rrule = event.getFirstProperty('rrule');
+      var recur = rrule.getFirstValue();
+      if (recur.isByCount()) {
+        recur.count -= countskipped;
+        rrule.setValue(recur);
+      }
+
+      var exDates = event.getAllProperties('exdate');
+      exDates.forEach(function(e){
+        var ex = new ICAL.Time.fromString(e.getFirstValue().toString());
+        if (ex < newStartDate){
+          event.removeProperty(e);
+        }
+      });
+
+      var rdates = event.getAllProperties('rdate');
+      rdates.forEach(function(r){
+        var vals = r.getValues();
+        vals = vals.filter(function(v){
+          var valTime = new ICAL.Time.fromString(v.toString(), r);
+          return (valTime.compare(referenceDate) >= 0 && valTime.compare(icalEvent.startDate) > 0)
+        });
+        if (vals.length == 0){
+          event.removeProperty(r);
+        }
+        else if(vals.length == 1){
+          r.setValue(vals[0]);
+        }
+        else if(vals.length > 1){
+          r.setValues(vals);
+        }
+      });
+    }
+  }
+  return event;
 }
 
 /**
